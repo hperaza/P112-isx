@@ -1,0 +1,31 @@
+;
+; Compiling...
+;
+era *.bak
+; NOTE: BDOS must be ORGed to DC00 before compiling.
+mac os3bdos.asm
+m80 =bios.180
+; Linking...
+;
+link bios60k.bin=bios[pEA00,lEA00]
+;
+; Patching to system image
+;
+movsys 60
+xsub
+sid sys60k.bin
+d1180,11BF
+ios3bdos.hex
+r3580
+d1180,11BF
+d1F80,1F9F
+ibios60k.bin
+r1E80
+d1F80,1F9F
+g0
+save 44 sys60kn.bin
+;
+; Ready for PSYSGEN SYS60KN.BIN
+;
+; End.
+
