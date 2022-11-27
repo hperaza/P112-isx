@@ -1,0 +1,26 @@
+# P112 disk definitions for cpmtools.
+
+# 3.5" 1.44M P112 floppies, new (Terry Gulczynski) version.
+diskdef p112
+  seclen 512
+  tracks 160
+  sectrk 18
+  blocksize 2048
+  maxdir 256
+  skew 1
+  boottrk 2
+  os 3
+end
+
+# 3.5" 1.44M P112 floppies, original (Dave Brooks) version.
+# Use this definition to access the ISX emulator image.
+diskdef p112-old
+  seclen 512
+  tracks 160
+  sectrk 18
+  blocksize 2048
+  maxdir 128
+  skew 1
+  boottrk 1
+  os 3
+end
