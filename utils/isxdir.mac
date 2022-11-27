@@ -1,0 +1,618 @@
+	CSEG
+
+BDOS	EQU	5
+FCB	EQU	5CH
+BFR	EQU	80H
+
+CR	EQU	0DH
+LF	EQU	0AH
+
+FNPL	EQU	2		; files per line
+FNSIZE	EQU	16
+
+FALSE	EQU	0
+TRUE	EQU	NOT FALSE
+
+ISX	EQU	TRUE		; set this to TRUE to show exact file sizes
+				; under the ISIS emulator, or to FALSE for
+				; a vanilla CP/M version
+
+XDIR:	LXI	H,0
+	DAD	SP
+	LXI	SP,STACK+64
+	PUSH	H
+	CALL	GETDSK
+	STA	DFDSK		; save the current disk
+	LXI	D,HEADER
+	CALL	PRINT		; print header
+	LDA	FCB		; disk specified?
+	ORA	A
+	LDA	DFDSK		; no, get default disk number
+	JZ	XDIR7
+	LDA	FCB		; otherwise get the disk number from the FCB
+	DCR	A
+	PUSH	PSW
+	CALL	SELDSK		; and select the disk
+	POP	PSW
+XDIR7:	INR	A
+	ADI	'A'-1		; convert to ASCII
+	CALL	TYPEA		; and display it
+	LXI	D,USRMSG
+	CALL	PRINT
+	CALL	GETUSR		; get current user number
+	MOV	L,A
+	XRA	A
+	MOV	H,A		; into HL
+	STA	TYPN		; no leading zeros or spaces
+	CALL	HLDEC		; show user number
+	MVI	A,' '
+	STA	TYPN		; next numbers printed with leading spaces
+	CALL	CRLF
+	CALL	CRLF
+	CALL	GETDPB		; get current disk's DPB, save block shift
+	XRA	A
+	STA	FCB		; clear disk code on FCB
+	LDA	FCB+1		; file mask specified?
+	CPI	' '
+	JNZ	XDIR1		; yes, use it
+	LDA	FCB+9
+	CPI	' '
+	JNZ	XDIR1
+	LXI	H,FCB+1
+	MVI	B,11
+XDIR0:	MVI	M,'?'		; otherwise default to *.*
+	INX	H
+	DCR	B
+	JNZ	XDIR0
+XDIR1:	MVI	A,'?'		; search for all extents of the file
+	STA	FCB+12
+	CALL	CFNT		; collect files
+	LDA	FNTC		; no matching files?
+	ORA	A
+	JZ	XDIRX		; exit if so
+	CALL	SFNT		; sort file name table
+	CALL	PFNT		; display files
+	CALL	CRLF
+	CALL	CRLF
+	LDA	COUNT
+	MOV	L,A
+	XRA	A
+	MOV	H,A
+	STA	TYPN		; no leading zeros or spaces
+	CALL	HLDEC		; show how many files
+	LXI	D,STR2
+	CALL	PRINT
+	LHLD	TSIZE
+	CALL	HLDEC		; and total space occupied
+	LXI	D,STR3
+	CALL	PRINT
+XDIRX:	LDA	DFDSK
+	CALL	SELDSK		; restore disk number
+	POP	H
+	SPHL
+	RET			; and return to CCP
+
+; Create file name table
+
+CFNT:	LXI	H,FNT
+	SHLD	FNTP		; set pointer to the table beginning
+	XRA	A
+	STA	COUNT		; initialize counter (used later in sort)
+	STA	FNTC		; and number of table elements
+	DCR	A
+	MOV	M,A		; end of table is 0FFh
+	LXI	D,FCB
+	CALL	SRCHF		; search for first occurrence
+	CPI	255
+	JNZ	CFNT1
+	LXI	D,NOFILE	; print message if no file found
+	JMP	PRINT		; and return
+CFNT1:	ANI	3
+	MOV	L,A
+	MVI	H,0
+	DAD	H
+	DAD	H
+	DAD	H
+	DAD	H
+	DAD	H		; *32
+	LXI	D,BFR
+	DAD	D
+	XCHG			; DE points to directory entry
+	LXI	H,COUNT
+	INR	M		; increment counter
+	LHLD	FNTP		; get table pointer into HL
+	LDA	FCB		; store disk number from FCB and not from
+	MOV	M,A		; directory entry to keep user numbers out
+	INX	D
+	INX	H
+	XCHG
+	MVI	B,FNSIZE-1
+	CALL	MOVE		; copy the filename, ext up to record count
+	XCHG
+	SHLD	FNTP		; store table pointer
+	MVI	M,0FFH		; add end ot table marker
+	LXI	H,FNTC
+	INR	M		; increment element counter
+	LXI	D,FCB
+	CALL	SRCHN		; search for next occurrence
+	CPI	255
+	JNZ	CFNT1
+	RET
+
+; Sort file name table (bubble sort)
+
+SFNT:	LXI	D,FNT		; DE = begin of table
+	XRA	A
+	STA	i		; i = 0
+SFNT1:	LXI	H,FNSIZE	; HL = next element
+	DAD	D
+	LDA	i
+	INR	A
+	STA	j		; j = i + 1
+SFNT2:	PUSH	H
+	PUSH	D
+	MVI	B,FNSIZE	; compare the two entries
+SFNT3:	LDAX	D
+	CMP	M
+	JNZ	SFNT4
+	INX	D
+	INX	H
+	DCR	B
+	JNZ	SFNT3
+	STC
+SFNT4:	POP	D
+	POP	H
+	JC	SFNT6
+	PUSH	H
+	PUSH	D
+	MVI	B,FNSIZE	; swap elements if necessary
+SFNT5:	LDAX	D
+	MOV	C,A
+	MOV	A,M
+	STAX	D
+	MOV	M,C
+	INX	D
+	INX	H
+	DCR	B
+	JNZ	SFNT5
+	POP	D
+	POP	H
+SFNT6:	LXI	B,FNSIZE
+	DAD	B
+	LDA	COUNT		; C = count
+	MOV	C,A
+	LDA	j
+	INR	A
+	STA	j		; j = j + 1
+	CMP	C		; end of table reached?
+	JC	SFNT2		; loop if not
+	XCHG
+	LXI	B,FNSIZE
+	DAD	B
+	XCHG
+	LDA	COUNT
+	DCR	A
+	MOV	C,A		; C = count - 1
+	LDA	i
+	INR	A
+	STA	i		; i = i + 1
+	CMP	C		; end of table reached?
+	JC	SFNT1		; loop if not
+	RET
+
+; Print file name table
+
+PFNT:	LXI	H,FNT
+	SHLD	FNTP		; set pointer to begin of table
+	LXI	H,0
+	SHLD	TSIZE		; clear total size
+	XRA	A
+	STA	COUNT		; initialize file counter
+	STA	LCOUNT		; initialize column counter
+PFNT2:	LHLD	FNTP
+	MOV	A,M
+	CPI	0FFH		; end of table?
+	JZ	WFNC		; if so, display filename and size and return
+	LXI	D,FCB
+	MVI	B,FNSIZE
+	CALL	MOVE		; copy table element to FCB
+	SHLD	FNTP		; save table pointer
+	LDA	EXM
+	CMA
+	MOV	C,A
+	LDA	FCB+12		; extent number
+	ANA	C		; zero (new entry)?
+	JNZ	PFNT4		; jump if not
+	LDA	COUNT		; were we processing a file?
+	ORA	A
+	JZ	PFNT3		; jump if not: this is the first one
+	CALL	WFNC		; otherwise display its filename and size
+PFNT3:	LXI	H,0
+	SHLD	FSIZE		; clear file size
+	LDA	COUNT
+	INR	A
+	STA	COUNT		; increment file counter
+	CPI	1
+	JZ	PFNT4
+	LDA	LCOUNT
+	INR	A
+	STA	LCOUNT		; increment column counter
+	CPI	FNPL
+	JC	PFNT6
+	CALL	CRLF		; display newline if max column reached
+	XRA	A
+	STA	LCOUNT		; and reset column counter
+	JMP	PFNT4
+PFNT6:	LXI	D,STR1		; display separator
+	CALL	PRINT
+PFNT4:	LXI	H,FCB
+	LXI	D,XFCB
+	MVI	B,FNSIZE
+	CALL	MOVE		; copy entry from FCB to XCFB
+	LDA	XFCB+15		; get record count
+	MOV	C,A
+	MVI	B,0		; into BC
+	LHLD	FSIZE
+	DAD	B
+	SHLD	FSIZE		; add it to the file size
+	JMP	PFNT2		; and loop to process next entry
+
+; Display HL decimal
+
+HLDEC:	MVI	B,0
+	LXI	D,-10000
+	CALL	SBCNT
+	LXI	D,-1000
+	CALL	SBCNT
+	LXI	D,-100
+	CALL	SBCNT
+	LXI	D,-10
+	CALL	SBCNT
+	MOV	A,L
+	ADI	'0'
+	JMP	TYPEA
+SBCNT:	MVI	C,'0'-1
+SB1:	INR	C
+	SHLD	TEMPN
+	DAD	D
+	JC	SB1
+	LHLD	TEMPN
+	MOV	A,C
+	CPI	'1'
+	JNC	SB2
+	MOV	A,B
+	ORA	A
+	MOV	A,C
+	JNZ	TYPEA
+	LDA	TYPN
+	ORA	A
+	JNZ	TYPEA
+	RET
+SB2:	MVI	B,0FFH
+	JMP	TYPEA
+
+; Copy B bytes from (HL) to (DE)
+
+MOVE:	MOV	A,M
+	STAX	D
+	INX	H
+	INX	D
+	DCR	B
+	JNZ	MOVE
+	RET
+
+; Display file name and size
+
+WFNC:	LXI	H,XFCB+1	; HL = file name field
+	MVI	B,11		; 8.3 format
+WFNC1:	MOV	A,M
+	ANI	7FH		; mask any attributes bit
+	CALL	TYPEA		; display the character
+	INX	H
+	MOV	A,B
+	CPI	4
+	JNZ	WFNC2
+	MVI	A,'.'		; display ext separator
+	CALL	TYPEA
+WFNC2:	DCR	B
+	JNZ	WFNC1
+	LHLD	FSIZE		; get file size in records into HL
+	MOV	A,H
+	ORA	L
+	JZ	TF3
+	DCX	H		; -1
+	LDA	BSH
+	CALL	SHRHL		; shift the value right BSH times
+	INX	H		; +1
+TF3:	LDA	BSH
+	SUI	3		; already in kbytes? (128 * 2^3 = 1024)
+	JZ	TF5		; yes, print the value
+TF4:	DAD	H		; otherwise adjust it
+	DCR	A
+	JNZ	TF4
+TF5:	XCHG
+	LHLD	TSIZE		; add the file size to the total
+	DAD	D
+	SHLD	TSIZE
+	XCHG
+	CALL	HLDEC		; and print it
+	MVI	A,'k'		; followed by a 'k'
+	CALL	TYPEA
+	IF	ISX		; ISX only: display the size in bytes as well
+	MVI	A,' '
+	CALL	TYPEA
+	LHLD	FSIZE		; get file size in records
+	MOV	C,L
+	MOV	B,H		; into BC
+	XRA	A
+	MOV	A,B
+	RAR
+	MOV	L,A
+	MOV	A,C
+	RAR
+	MOV	D,A
+	MVI	A,0
+	RAR
+	MOV	E,A		; * 128 -> size in bytes into LDE
+	ORA	D
+	ORA	L
+	JZ	TF6
+	LDA	XFCB+13		; get last record byte count from last extent
+	MOV	C,A
+	ORA	A
+	JZ	TF6
+	MOV	A,E
+	SUB	C
+	MOV	E,A
+	MOV	A,D
+	SBI	0
+	MOV	D,A
+	MOV	A,L
+	SBI	0
+	MOV	L,A
+TF6:	CALL	LDEC
+	ENDIF
+	RET
+
+; HL >>= A
+
+SHRHL:	MOV	E,A
+SH1:	ORA	A
+	MOV	A,H
+	RAR
+	MOV	H,A
+	MOV	A,L
+	RAR
+	MOV	L,A
+	DCR	E
+	JNZ	SH1
+	RET
+
+PRINT:	PUSH	H
+	PUSH	B
+	MVI	C,9
+	CALL	BDOS
+	POP	B
+	POP	H
+	RET
+
+GETUSR:	MVI	E,0FFH
+	MVI	C,32
+	JMP	BDOS
+
+GETDSK:	MVI	C,25
+	JMP	BDOS
+
+SELDSK:	MOV	E,A
+	MVI	C,14
+	JMP	BDOS
+
+GETDPB:	MVI	C,31
+	CALL	BDOS
+	INX	H
+	INX	H
+	MOV	A,M
+	STA	BSH		; block shift
+	INX	H
+	INX	H
+	MOV	A,M
+	STA	EXM		; extent mask
+	RET
+
+SRCHF:	PUSH	H
+	PUSH	D
+	PUSH	B
+	MVI	C,17
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+SRCHN:	PUSH	H
+	PUSH	D
+	PUSH	B
+	MVI	C,18
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+CRLF:	MVI	A,CR
+	CALL	TYPEA
+	MVI	A,LF
+TYPEA:	PUSH	H
+	PUSH	D
+	PUSH	B
+	MVI	C,2
+	MOV	E,A
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+	IF	ISX
+
+; Display long number in registers LDE as decimal.
+; Max file size in CP/M is 8 Mb (800000h-1, or 8388607)
+
+LDEC:	MOV	A,E		; LSB0 LN -> 6
+	ANI	0Fh
+	STA	BCDNUM+6
+	MOV	A,E
+	RRC
+	RRC
+	RRC
+	RRC
+	ANI	0Fh
+	STA	BCDNUM+5	; LSB0 HN -> 5
+	MOV	A,D		; LSB1 LN -> 4
+	ANI	0Fh
+	STA	BCDNUM+4
+	MOV	A,D
+	RRC
+	RRC
+	RRC
+	RRC
+	ANI	0Fh
+	STA	BCDNUM+3	; LSB1 HN -> 3
+	MOV	A,L		; LSB2 LN -> 2
+	ANI	0Fh
+	STA	BCDNUM+2
+	MOV	A,L
+	RRC
+	RRC
+	RRC
+	RRC
+	ANI	0Fh
+	STA	BCDNUM+1	; LSB2 HN -> 1
+	XRA	A
+	STA	BCDNUM
+	MVI	B,7		; B = digit counter
+	LXI	D,BCDNUM	; DE = digit pointer
+LDIGIT:	MOV	L,E
+	MOV	H,D		; HL = nibble pointer
+	XRA	A
+	PUSH	B
+	MOV	C,B		; C = nibble counter
+LDIV:	CALL	XCHD
+	CALL	DIV10		; A = A/10, B = A%10
+	CALL	XCHD
+	MOV	A,B
+	RRC
+	RRC
+	RRC
+	RRC			; remainder in acc HIGH NIBBLE
+	INX	H
+	DCR	C
+	JNZ	LDIV
+	XCHG
+	MOV	M,B
+	XCHG
+	INX	D
+	POP	B
+	DCR	B
+	JNZ	LDIGIT
+	LXI	H,BCDNUM+6	; display the number
+	MVI	C,7
+	MVI	B,0
+PRLOOP:	MOV	E,M
+	MOV	A,B
+	ORA	A
+	MOV	A,E
+	JNZ	PR3
+	ORA	A
+	JNZ	PR3
+	MOV	A,C
+	CPI	1
+	MOV	A,E
+	JZ	PR3
+	MVI	A,' '
+	CALL	TYPEA
+	JMP	PR1
+PR3:	MVI	B,1
+	ADI	'0'
+	CALL	TYPEA
+PR1:	DCX	H
+	DCR	C
+	JNZ	PRLOOP
+	RET
+
+XCHD:	PUSH	B
+	PUSH	PSW
+	ANI	0Fh
+	MOV	C,A	; C = _A
+	MOV	A,M
+	ANI	0Fh
+	MOV	B,A	; B = _M
+	MOV	A,M
+	ANI	0F0h	; A = M_
+	ORA	C	; A = MA
+	MOV	M,A
+	POP	PSW
+	ANI	0F0h	; A = A_
+	ORA	B	; A = AM
+	POP	B
+	RET
+
+DIV10:	PUSH	D
+	PUSH	B
+	MOV	D,A
+	MVI	E,10
+	MVI	B,8+1
+	XRA	A
+D1:	ADC	A
+	SBB	E
+	JNC	D0
+	ADD	E
+D0:	CMC
+	MOV	C,A
+	MOV	A,D
+	RAL
+	MOV	D,A
+	MOV	A,C
+	DCR	B
+	JNZ	D1
+	POP	B
+	MOV	B,A
+	MOV	A,D
+	POP	D
+	RET
+
+	ENDIF
+
+STR1:	DB	'     $'
+STR2:	DB	' file(s), total size = $'
+STR3:	DB	'k bytes.',CR,LF,'$'
+
+HEADER:	DB	CR,LF,'Directory for drive $'
+USRMSG:	DB	':, user $'
+NOFILE:	DB	'No such file(s).',CR,LF,'$'
+
+	DSEG
+
+STACK:	DS	64
+
+COUNT:	DS	1		; # files, also used as element count in sort
+i:	DS	1		; temp variable for the sort routine
+j:	DS	1		;  "      "      "   "   "      "
+XFCB:	DS	FNSIZE
+TYPN:	DS	1		; leading character for number output
+TEMPN:	DS	2		; used by HLDEC
+FSIZE:	DS	2		; current file size
+	IF	ISX
+BCDNUM:	DS	7		; temporary storage for long decimal
+	ENDIF
+TSIZE:	DS	2		; total file size
+LCOUNT:	DS	1		; column counter
+FNTP:	DS	2		; table pointer
+FNTC:	DS	1		; number of elements in the table
+BSH:	DS	1		; block shift value for the current disk
+EXM:	DS	1		; extent mask value for the current disk
+DFDSK:	DS	1		; default disk
+
+FNT	EQU	$		; file name table begins here
+
+	END

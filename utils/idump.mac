@@ -1,0 +1,278 @@
+;	INTEL Object File Dump Program
+;	Hector Peraza, Dec 7 2004
+
+	CSEG
+
+BDOS	EQU	0005H	; BDOS entry point
+CONIN	EQU	1	; BDOS console input
+CONOUT	EQU	2	; BDOS console output
+PRINT	EQU	9	; BDOS print string
+CONST	EQU	11	; BDOS console status
+OPEN	EQU	15	; BDOS file open
+READ	EQU	20	; BDOS read function
+
+FCB	EQU	5CH	; FCB address
+BUFF	EQU	80H	; disk buffer address
+
+CR	EQU	0DH	; carriage return
+LF	EQU	0AH	; line feed
+
+;	FCB definitions
+
+FCBDN	EQU	FCB+0	; disk name
+FCBFN	EQU	FCB+1	; file name
+FCBFT	EQU	FCB+9	; file ext
+FCBRL	EQU	FCB+12	; file's current reel number
+FCBRC	EQU	FCB+15	; file's record count (0 to 128)
+FCBCR	EQU	FCB+32	; current (next) record number (0 to 127)
+FCBLN	EQU	FCB+33	; fcb length
+
+START:	LXI	H,0
+	DAD	SP
+	SHLD	OLDSP
+	LXI	SP,STKTOP
+	CALL	OPENF
+	INR	A	; file present?
+	JZ	ERROPN
+	CALL	DUMP
+EXIT:	LHLD	OLDSP
+	SPHL
+	RET
+
+ERROPN:	LXI	D,OPNMSG
+ERROR:	MVI	C,PRINT
+	CALL	BDOS
+	JMP	EXIT
+
+DUMP:	CALL	GNB	; get obj record type
+	JC	RDERR
+	STA	RECTYP
+	LXI	D,RTMSG
+	MVI	C,PRINT
+	CALL	BDOS
+	LDA	RECTYP
+	CALL	AHEX	; display obj record type
+	CALL	GNB
+	JC	RDERR
+	MOV	E,A
+	CALL	GNB
+	JC	RDERR
+	MOV	D,A	; obj record length in DE
+	PUSH	D
+	LXI	D,RLMSG
+	MVI	C,PRINT
+	CALL	BDOS
+	POP	H
+	CALL	HLHEX	; display obj record length
+	CALL	CRLF
+	MOV	A,H
+	ORA	L
+	LXI	D,BLMSG
+	JZ	ERROR
+	XCHG
+	LXI	H,0
+	SHLD	OFFSET
+GETL1:	LXI	H,LNBFR
+	MVI	C,16
+	MVI	B,0
+GETL:	CALL	GNB
+	JC	RDERR
+	MOV	M,A
+	DCX	D
+	MOV	A,D
+	ORA	E
+	JZ	EOSEG
+	INX	H
+	INR	B
+	DCR	C
+	JNZ	GETL
+	MOV	A,B
+	STA	LNLEN
+	PUSH	D
+	CALL	DUMPLN
+	POP	D
+	JMP	GETL1
+EOSEG:	MOV	A,M	; last byte was the checksum
+	PUSH	PSW
+	MOV	A,B	; len-1
+	STA	LNLEN
+	CALL	DUMPLN
+	LXI	D,CKSBYT
+	MVI	C,PRINT
+	CALL	BDOS
+	POP	PSW
+	CALL	AHEX	; display checksum byte
+	CALL	CRLF
+	LDA	RECTYP
+	CPI	0EH	; EOF record?
+	JNZ	DUMP
+	RET
+
+RDERR:	LXI	D,RDMSG
+	JMP	ERROR
+
+; dump a hex line (0 to 16 bytes) from LNBFR
+
+DUMPLN:	LDA	LNLEN
+	ORA	A
+	RZ
+	MOV	E,A
+	LHLD	OFFSET
+	CALL	OUTADR
+	LXI	B,16
+	DAD	B
+	SHLD	OFFSET
+	LXI	H,LNBFR
+	PUSH	H
+	PUSH	D
+DMPH:	MOV	A,M
+	CALL	AHEX
+	MVI	A,' '
+	CALL	PUTCHR
+	INX	H
+	DCR	C
+	DCR	E
+	JNZ	DMPH
+	MOV	A,C
+	ORA	A
+	JZ	DMPH1
+DMPH2:	MVI	A,' '
+	CALL	PUTCHR
+	MVI	A,' '
+	CALL	PUTCHR
+	MVI	A,' '
+	CALL	PUTCHR
+	DCR	C
+	JNZ	DMPH2
+DMPH1:	POP	D
+	POP	H
+	MVI	A,' '
+	CALL	PUTCHR
+DMPL:	MOV	A,M
+	CPI	' '
+	JC	OUTDOT
+	CPI	80H
+	JC	CHAR
+OUTDOT:	MVI	A,'.'
+CHAR:	CALL	PUTCHR
+	INX	H
+	DCR	E
+	JNZ	DMPL
+	CALL	CRLF
+	RET
+
+; I/O subroutines
+
+BREAK:	PUSH	H
+	PUSH	D
+	PUSH	B
+	MVI	C,CONST
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+PUTCHR:	PUSH	H
+	PUSH	D
+	PUSH	B
+	MVI	C,CONOUT
+	MOV	E,A
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+CRLF:	MVI	A,CR
+	CALL	PUTCHR
+	MVI	A,LF
+	CALL	PUTCHR
+	RET
+
+OUTADR:	CALL	HLHEX
+	MVI	A,':'
+	CALL	PUTCHR
+	MVI	A,' '
+	JMP	PUTCHR
+
+HLHEX:	MOV	A,H
+	CALL	AHEX
+	MOV	A,L
+AHEX:	PUSH	PSW
+	RRC
+	RRC
+	RRC
+	RRC
+	CALL	AH1
+	POP	PSW
+AH1:	ANI	0FH
+	CPI	10
+	JM	AH2
+	ADI	7
+AH2:	ADI	'0'
+	JMP	PUTCHR
+
+; get next byte, return CY on EOF
+
+GNB:	LDA	IBP
+	CPI	80H
+	JNZ	G0
+	CALL	DISKR	; read next sector
+	ORA	A	; read OK ?
+	STC
+	RNZ		; no, return with CY
+G0:	PUSH	H
+	PUSH	D
+	MOV	E,A	; LO-byte of buffer index, A=0 if read was OK
+	MVI	D,0
+	INR	A	; ++index
+	STA	IBP
+	LXI	H,BUFF
+	DAD	D
+	MOV	A,M
+	POP	D
+	POP	H
+	ORA	A	; reset CY
+	RET
+
+OPENF:	MVI	A,80H
+	STA	IBP	; set buffer pointer to end to force a first read
+	XRA	A
+	STA	FCBCR	; clear current record
+	LXI	D,FCB
+	MVI	C,OPEN
+	CALL	BDOS	; FF in A if open error
+	RET
+
+DISKR:	PUSH	H
+	PUSH	D
+	PUSH	B
+	LXI	D,FCB
+	MVI	C,READ
+	CALL	BDOS
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+OPNMSG:	DB	'File Not Found',CR,LF,'$'
+RDMSG:	DB	CR,LF,'Incomplete record, EOF reached',CR,LF,'$'
+RTMSG:	DB	CR,LF,'Record type = $'
+RLMSG:	DB	', length = $'
+BLMSG:	DB	'Bad record length',CR,LF,'$'
+CKSBYT:	DB	'Checksum byte = $'
+
+	DSEG
+
+IBP:	DS	2	; input buffer pointer
+OLDSP:	DS	2	; entry SP value from CCP
+LNBFR:	DS	16	; buffer for one hex line
+LNLEN:	DS	1	; how many bytes were stored in LNBFR
+OFFSET:	DS	2	; relative obj record offset
+RECTYP:	DS	1	; object record type
+
+	DS	64	; reserve 32-level stack
+STKTOP	EQU	$
+
+	END
