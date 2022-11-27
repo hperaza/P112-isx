@@ -1,0 +1,9 @@
+seteof $1.plm
+isx
+era $1
+era $1.mod
+era $1.obj
+plm80 $1.plm debug pagewidth(80) $2
+link $1.obj,plm80.lib,system.lib to $1.mod map print($1.map)
+locate $1.mod map symbols print($1.tra)
+

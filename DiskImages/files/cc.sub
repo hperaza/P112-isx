@@ -1,0 +1,11 @@
+seteof $1.plm
+isx
+era $1.mod
+era $1
+era $1.obj
+plm80 $1.plm debug pagewidth(80) $2
+link $1.obj,x0100,plm80.lib to $1.mod map print($1.map)
+locate $1.mod code(0100H) stacksize(100) map print($1.tra)
+cpm
+objcpm $1
+

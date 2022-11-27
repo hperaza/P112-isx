@@ -1,0 +1,111 @@
+PL/M-80 COMPILER                                                        PAGE   1
+
+
+ISIS-II PL/M-80 V3.1 COMPILATION OF MODULE PLMSMP
+OBJECT MODULE PLACED IN PLMSMP.OBJ
+COMPILER INVOKED BY:  PLM80 PLMSMP.PLM DEBUG PAGEWIDTH(80) 
+
+
+
+              /*
+                                     SAMPLE  PL/M  PROGRAM
+
+                  THIS PROGRAM CALCULATES AND PRINTS OUT THE SQUARE ROOTS OF
+                  ALL INTEGERS BETWEEN 1 AND 1000.
+
+              */
+
+   1          PLMSMP:
+              DO;
+
+   2   1      DECLARE CR LITERALLY '0DH', LF LITERALLY '0AH', TRUE LITERALLY '1'
+           -   ,
+                      FALSE LITERALLY '0';
+
+   3   1      CO: PROCEDURE (CHAR) EXTERNAL;
+   4   2          DECLARE CHAR BYTE;
+   5   2          END CO;
+
+   6   1      EXIT: PROCEDURE EXTERNAL;
+   7   2          END EXIT;
+
+   8   1      SQUARE$ROOT: PROCEDURE(X) BYTE;
+   9   2          DECLARE (X,Y,Z) ADDRESS;
+  10   2          Y=X; Z=SHR(X+1,1);
+  12   2              DO WHILE Y<>Z;
+  13   3              Y=Z; Z=SHR(X/Y + Y + 1, 1);
+  15   3              END;
+  16   2          RETURN Y;
+  17   2          END SQUAREROOT;
+
+                  /* PRINT USING INTELLEC MONITOR */
+  18   1      PRINT$CHAR: PROCEDURE (CHAR);
+  19   2          DECLARE CHAR BYTE;
+  20   2          CALL CO(CHAR);
+  21   2          END PRINT$CHAR;
+
+  22   1      PRINT$STRING: PROCEDURE(NAME,LENGTH);
+  23   2          DECLARE NAME ADDRESS,
+                      (LENGTH,I) BYTE,
+                      CHAR BASED NAME(1) BYTE;
+  24   2              DO I = 0 TO LENGTH-1;
+  25   3              CALL PRINT$CHAR(CHAR(I));
+  26   3              END;
+  27   2          END PRINT$STRING;
+
+  28   1      PRINT$NUMBER: PROCEDURE(NUMBER,BASE,CHARS,ZERO$SUPPRESS);
+  29   2          DECLARE NUMBER ADDRESS, (BASE,CHARS,ZERO$SUPPRESS,I,J) BYTE;
+  30   2          DECLARE TEMP(16) BYTE;
+  31   2          IF CHARS > LAST(TEMP) THEN CHARS = LAST(TEMP);
+  33   2              DO I = 1 TO CHARS;
+PL/M-80 COMPILER                                                        PAGE   2
+
+
+  34   3              J=NUMBER MOD BASE + '0';
+  35   3              IF J > '9' THEN J = J + 7;
+  37   3              IF ZERO$SUPPRESS AND I <> 1 AND NUMBER = 0 THEN
+  38   3                  J = ' ';
+  39   3              TEMP(LENGTH(TEMP)-I) = J;
+  40   3              NUMBER = NUMBER / BASE;
+  41   3              END;
+  42   2          CALL PRINT$STRING(.TEMP + LENGTH(TEMP) - CHARS,CHARS);
+  43   2          END PRINT$NUMBER;
+
+  44   1      DECLARE I ADDRESS,
+                  CRLF LITERALLY 'CR,LF',
+                  HEADING (*) BYTE INITIAL (CRLF,LF,LF,
+                  '                        TABLE OF SQUARE ROOTS', CRLF,LF,
+                  ' VALUE  ROOT VALUE  ROOT VALUE  ROOT VALUE  ROOT VALUE  ROOT'
+           -   ,
+                  CRLF,LF);
+
+                  /* SILENCE TTY AND PRINT COMPUTED VALUES */
+  45   1          DO I = 1 TO 1000;
+  46   2          IF I MOD 5 = 1 THEN
+  47   2              DO; IF I MOD 250 = 1 THEN
+  49   3                  CALL PRINT$STRING(.HEADING,LENGTH(HEADING));
+                          ELSE
+  50   3                  CALL PRINT$STRING(.(CR,LF),2);
+  51   3              END;
+  52   2          CALL PRINT$NUMBER(I,10,6,TRUE /* TRUE SUPPRESSES LEADING ZEROE
+           -   S */);
+  53   2          CALL PRINT$NUMBER(SQUARE$ROOT(I), 10,6, TRUE);
+  54   2          END;
+  55   1      CALL EXIT;
+
+  56   1      END;
+
+              EOF
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 01B5H    437D
+     VARIABLE AREA SIZE = 0097H    151D
+     MAXIMUM STACK SIZE = 0008H      8D
+     83 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION
+
